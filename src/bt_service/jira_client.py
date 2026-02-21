@@ -30,14 +30,19 @@ class JiraClient:
         fields: dict[str, Any],
         comment: str | None,
     ) -> dict[str, Any]:
+        base_url = self._settings.resolved_jira_base_url
         if not self._settings.jira_is_configured:
             raise JiraConfigError(
-                "Jira is not configured. Set BT_JIRA_BASE_URL, BT_JIRA_USER_EMAIL, BT_JIRA_API_TOKEN."
+                "Jira is not configured. Set BT_JIRA_BASE_URL/BT_JIRA_*_<ENV>, "
+                "BT_JIRA_USER_EMAIL/BT_JIRA_USER_EMAIL_<ENV>, "
+                "BT_JIRA_API_TOKEN/BT_JIRA_API_TOKEN_<ENV>."
             )
+        if not base_url:
+            raise JiraConfigError("Jira base URL is empty after environment resolution.")
 
         timeout = httpx.Timeout(self._settings.jira_timeout_seconds)
         async with httpx.AsyncClient(
-            base_url=self._settings.jira_base_url,
+            base_url=base_url,
             timeout=timeout,
             verify=self._settings.jira_verify_ssl,
             trust_env=True,
@@ -71,7 +76,11 @@ class JiraClient:
         }
 
     def _build_headers(self) -> dict[str, str]:
-        credential_raw = f"{self._settings.jira_user_email}:{self._settings.jira_api_token}"
+        user_email = self._settings.resolved_jira_user_email
+        api_token = self._settings.resolved_jira_api_token
+        if not user_email or not api_token:
+            raise JiraConfigError("Jira credentials are empty after environment resolution.")
+        credential_raw = f"{user_email}:{api_token}"
         basic_token = base64.b64encode(credential_raw.encode("utf-8")).decode("ascii")
         return {
             "Accept": "application/json",
@@ -84,4 +93,3 @@ class JiraClient:
         if response.status_code >= 400:
             detail = response.text.strip() or response.reason_phrase
             raise JiraApiError(action=action, status_code=response.status_code, detail=detail)
-

@@ -5,13 +5,6 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
-class ToolExecutionRequest(BaseModel):
-    executable: str = Field(min_length=1, max_length=255)
-    args: list[str] = Field(default_factory=list)
-    timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
-    working_dir: str | None = None
-
-
 class HciFilterRequest(BaseModel):
     input_path: str = Field(min_length=1)
     opcode: str | None = None
