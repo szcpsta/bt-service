@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -25,6 +26,9 @@ class ProcessResult:
     stdout: str
     stderr: str
     duration_ms: int
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
 
 class ProcessRunner:
@@ -80,11 +84,13 @@ class ProcessRunner:
             )
         except subprocess.TimeoutExpired as exc:
             elapsed = int((time.perf_counter() - started) * 1000)
+            stdout = self._to_text(exc.stdout)
+            stderr = self._to_text(exc.stderr) + f"\nProcess timed out after {timeout} seconds."
             return ProcessResult(
                 command=command,
                 exit_code=124,
-                stdout=exc.stdout or "",
-                stderr=(exc.stderr or "") + f"\nProcess timed out after {timeout} seconds.",
+                stdout=self._sanitize_output(stdout),
+                stderr=self._sanitize_output(stderr),
                 duration_ms=elapsed,
             )
 
@@ -92,8 +98,8 @@ class ProcessRunner:
         return ProcessResult(
             command=command,
             exit_code=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            stdout=self._sanitize_output(completed.stdout),
+            stderr=self._sanitize_output(completed.stderr),
             duration_ms=elapsed,
         )
 
@@ -101,4 +107,22 @@ class ProcessRunner:
         env = os.environ.copy()
         if self._settings.proxy_apply_to_process:
             env.update(self._settings.proxy_env())
+        if self._settings.tool_force_no_color_env:
+            env["NO_COLOR"] = "1"
+            env["CLICOLOR"] = "0"
+            env["CLICOLOR_FORCE"] = "0"
+            env["TERM"] = "dumb"
         return env
+
+    def _sanitize_output(self, value: str) -> str:
+        if not self._settings.tool_strip_ansi_output:
+            return value
+        return _ANSI_ESCAPE_RE.sub("", value)
+
+    @staticmethod
+    def _to_text(value: str | bytes | None) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value

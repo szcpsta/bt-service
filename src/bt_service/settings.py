@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     tool_bin_dir: str = "tools/bin"
     tool_default_timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    tool_strip_ansi_output: bool = True
+    tool_force_no_color_env: bool = True
+    tool_hci_filter_executable: str = "publish/BluetoothKit.Console"
+    tool_hci_filter_working_dir: str = "tools/bin"
 
     proxy_http: str | None = None
     proxy_https: str | None = None

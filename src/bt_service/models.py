@@ -12,11 +12,22 @@ class ToolExecutionRequest(BaseModel):
     working_dir: str | None = None
 
 
+class HciFilterRequest(BaseModel):
+    input_path: str = Field(min_length=1)
+    opcode: str | None = None
+    ogf: str | None = None
+    ocf: str | None = None
+    eventcode: str | None = None
+    le_subevent: str | None = None
+    vendor_eventcode: str | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
+
+
 class ToolExecutionResponse(BaseModel):
     executable: str
     command: list[str]
     exit_code: int
-    stdout: str
+    output: Any
     stderr: str
     duration_ms: int
 
@@ -37,4 +48,3 @@ class JiraIssueUpdateResponse(BaseModel):
     issue_key: str
     fields_updated: bool
     comment_added: bool
-

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
+from typing import Any
 
 import uvicorn
 from anyio.to_thread import run_sync
@@ -9,6 +11,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 
 from bt_service.jira_client import JiraApiError, JiraClient, JiraConfigError
 from bt_service.models import (
+    HciFilterRequest,
     JiraIssueUpdateRequest,
     JiraIssueUpdateResponse,
     ToolExecutionRequest,
@@ -36,6 +39,16 @@ def configure_logging(level: str) -> None:
         level=level.upper(),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
+
+
+def _try_parse_json(text: str) -> Any | None:
+    content = text.strip()
+    if not content:
+        raise ValueError("Tool stdout is empty. JSON output is required.")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        raise ValueError("Tool stdout must be valid JSON.")
 
 
 @asynccontextmanager
@@ -94,11 +107,69 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        try:
+            output = _try_parse_json(result.stdout)
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
         return ToolExecutionResponse(
             executable=payload.executable,
             command=result.command,
             exit_code=result.exit_code,
-            stdout=result.stdout,
+            output=output,
+            stderr=result.stderr,
+            duration_ms=result.duration_ms,
+        )
+
+    @api.post("/tools/hci/filter", tags=["tools"], response_model=ToolExecutionResponse)
+    async def hci_filter(
+        payload: HciFilterRequest,
+        current: Settings = Depends(get_settings),
+    ) -> ToolExecutionResponse:
+        runner = ProcessRunner(current)
+        runner.ensure_bin_dir()
+
+        args = ["hci", "filter", "--mode", "json", "-o", "stdout"]
+        if payload.ogf:
+            args.extend(["--ogf", payload.ogf])
+        if payload.ocf:
+            args.extend(["--ocf", payload.ocf])
+        if payload.opcode:
+            args.extend(["--opcode", payload.opcode])
+        if payload.eventcode:
+            args.extend(["--eventcode", payload.eventcode])
+        if payload.le_subevent:
+            args.extend(["--le-subevent", payload.le_subevent])
+        if payload.vendor_eventcode:
+            args.extend(["--vendor-eventcode", payload.vendor_eventcode])
+
+        args.append(payload.input_path)
+
+        try:
+            result = await run_sync(
+                runner.run,
+                current.tool_hci_filter_executable,
+                args,
+                payload.timeout_seconds,
+                current.tool_hci_filter_working_dir,
+            )
+        except ExecutableNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except UnsafeExecutablePathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        try:
+            output = _try_parse_json(result.stdout)
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        return ToolExecutionResponse(
+            executable=current.tool_hci_filter_executable,
+            command=result.command,
+            exit_code=result.exit_code,
+            output=output,
             stderr=result.stderr,
             duration_ms=result.duration_ms,
         )

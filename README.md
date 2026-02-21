@@ -41,6 +41,8 @@ Swagger UI: `http://127.0.0.1:8000/docs`
 
 - Default executable directory: `tools/bin`
 - Path traversal is blocked (`../` etc.)
+- ANSI color output can be sanitized in API response (`BT_TOOL_STRIP_ANSI_OUTPUT`)
+- Child process can be forced to no-color mode (`BT_TOOL_FORCE_NO_COLOR_ENV`)
 
 ## Proxy Handling
 
@@ -66,7 +68,11 @@ Set values in `.env`:
 - `GET /api/v1/health`
 - `GET /api/v1/tools/bin`
 - `POST /api/v1/tools/run`
+- `POST /api/v1/tools/hci/filter` (fixed executable/working_dir/mode/output)
 - `POST /api/v1/jira/issues/update`
+
+`POST /api/v1/tools/run` requires the executed program to print valid JSON to `stdout`.
+If `stdout` is not valid JSON, API returns `502`.
 
 ### Tool Run Request Example
 
@@ -74,6 +80,34 @@ Set values in `.env`:
 {
   "executable": "my_program",
   "args": ["--mode", "check"],
+  "timeout_seconds": 30
+}
+```
+
+### Tool Run With Shared Storage Path Example
+
+```json
+{
+  "executable": "publish/BluetoothKit.Console",
+  "args": ["/shared/logs/sample.log", "/shared/results/result.txt"],
+  "timeout_seconds": 60
+}
+```
+
+### Fixed HCI Filter Endpoint Example
+
+`POST /api/v1/tools/hci/filter` uses fixed values from server settings:
+- executable: `BT_TOOL_HCI_FILTER_EXECUTABLE`
+- working directory: `BT_TOOL_HCI_FILTER_WORKING_DIR`
+- fixed args: `hci filter --mode json -o stdout`
+
+Request body example:
+
+```json
+{
+  "input_path": "btsnoop_hci.log",
+  "ogf": "0x01",
+  "eventcode": "0x0E,0x0F",
   "timeout_seconds": 30
 }
 ```
